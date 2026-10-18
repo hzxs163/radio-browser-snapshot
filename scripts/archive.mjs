@@ -117,15 +117,14 @@ export async function main() {
     log(`  已创建 Release ${rel.tag_name} (id=${rel.id})`);
   }
 
-  const up = new URL(rel.upload_url);
-  up.searchParams.set('name', path.basename(FILE));
-  up.pathname = up.pathname.replace('{?name,label}', '');
+  // upload_url 形如 .../assets{?name,label}；必须先剥掉模板再拼查询串，
+  // 否则 new URL() 会把 {} 编码成 %7B%7D，路径脏掉后 GitHub 报 "Multipart form data required"
+  const up = rel.upload_url.replace('{?name,label}', '') + '?name=' + encodeURIComponent(path.basename(FILE));
   const res = await fetch(up, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${TOKEN}`,
       'Content-Type': 'application/gzip',
-      'Content-Length': String(buf.length),
       'X-GitHub-Api-Version': '2022-11-28',
     },
     body: buf,
@@ -133,6 +132,7 @@ export async function main() {
   const txt = await res.text();
   if (!res.ok) throw new Error(`上传资产失败 ${res.status}: ${txt.slice(0, 300)}`);
   const asset = JSON.parse(txt);
+  if (asset.size !== buf.length) throw new Error(`上传后体积不符：GitHub 报 ${asset.size} B，本地 ${buf.length} B`);
   log(`  已上传 ${asset.name} ${asset.size} B -> ${asset.browser_download_url}`);
 
   const after = (await gh(`/repos/${owner}/${repo}/releases?per_page=100`)).filter((r) => (r.tag_name || '').startsWith(PREFIX));
