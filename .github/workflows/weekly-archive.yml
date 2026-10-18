@@ -1,0 +1,82 @@
+name: weekly-archive
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      budget_bytes:
+        description: '归档总体积上限（字节）'
+        required: false
+        default: '990000000'
+      dry_run:
+        description: '只打印将删除/新建什么，不改动仓库'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 取 data 分支的最新快照（不重新请求 Radio Browser）
+        uses: actions/checkout@v4
+        with:
+          ref: data
+          path: snapshot
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 单元测试（裁剪与周编号逻辑）
+        run: node scripts/test-archive.mjs
+
+      - name: 校验快照文件
+        run: |
+          set -euo pipefail
+          test -s snapshot/stations.csv.gz
+          node -e '
+            const zlib=require("zlib"),fs=require("fs");
+            const csv=zlib.gunzipSync(fs.readFileSync("snapshot/stations.csv.gz")).toString("utf8");
+            const lines=csv.split("\n").filter(x=>x.length);
+            const meta=JSON.parse(fs.readFileSync("snapshot/meta.json","utf8"));
+            const dataRows=lines.length-1;
+            console.log("快照行数",dataRows,"meta.rows_written",meta.rows_written,"sha256 ok?",
+              require("crypto").createHash("sha256").update(fs.readFileSync("snapshot/stations.csv.gz")).digest("hex")===meta.sha256_csv_gz);
+            if (dataRows !== meta.rows_written) throw new Error("快照行数与 meta.json 不符，拒绝归档");
+          '
+
+      - name: 归档为 Release 并按体积裁剪
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          EXTRA=""
+          if [ '${{ inputs.dry_run }}' = 'true' ]; then EXTRA="--dry-run"; fi
+          node scripts/archive.mjs --file=snapshot/stations.csv.gz --budget-bytes='${{ inputs.budget_bytes || '990000000' }}' $EXTRA
+
+      - name: 摘要写进 job summary
+        if: ${{ success() }}
+        run: |
+          {
+            echo "### 周归档"
+            echo
+            echo "- 预算：${{ inputs.budget_bytes || '990000000' }} B"
+            echo "- 存档清单：https://github.com/${{ github.repository }}/releases"
+            echo "- 每日最新：\`data\` 分支"
+          } >> "$GITHUB_STEP_SUMMARY"

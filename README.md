@@ -31,6 +31,19 @@ curl -L -o data.tar.gz https://github.com/hzxs163/radio-browser-snapshot/archive
 
 注意行数口径：官方 `/json/stats` 的 `stations` 只统计**可用**台（62046），另有 `stations_broken`（7026）；全量行数 = 两者之和 = 69072，脚本按这个数做完整性下限校验（95%）。CSV 里每行都带 `lastcheckok` / `ssl_error` / `bitrate`，可自行过滤掉官方判定已失效的台。
 
+## 历史存档（每周 1 份，总体积封顶 0.99 GB）
+
+`weekly-archive.yml`：每周一 05:00 UTC（在每日快照之后一小时）把 `data` 分支的 `stations.csv.gz` 存成一个 **Release**，tag 形如 `snap-2026-W42`（ISO 周号，CI 晚跑一天也不会滑到别的一周）。
+
+- 只存 CSV（约 9.35 MB/份），不存 JSONL —— JSONL 的额外字段（`changeuuid`/`languagecodes`/`ssl_error` 等）在每日最新的 `data` 分支里都有。
+- 每次运行先算所有 `snap-*` Release 的资产总体积，超过 `990000000` B 就**从最老的一周开始删**，删到低于预算为止；无论如何至少保留 1 份（哪怕单份就超预算）。
+- 990 MB ÷ 9.35 MB ≈ **105 周 ≈ 两年**跨度。
+- 取最新一份：`https://github.com/hzxs163/radio-browser-snapshot/releases/latest/download/stations.csv.gz`
+
+**为什么放 Release 而不是 git 分支**：git 里删掉旧文件不会让 `.git` 变小，历史中的 blob 仍在，仓库只增不减；要真正回收就得每次重写整条分支再强推，那样每次都要上传全部存档，CI 又慢又易超时。Release 资产存在 git 之外，删 Release 就是真回收空间，也不影响 `git clone` 体积。
+
+裁剪与周编号逻辑是纯函数，可单测：`node scripts/test-archive.mjs`（workflow 里每次归档前都会先跑它）。加 `--dry-run` 只打印打算删什么、建什么，不改动仓库。
+
 ## 为什么 `data` 分支只有一个提交
 
 电台的 `clickcount`、`lastchecktime` 每天都在变，全量快照不可能做增量 diff。每天两个产物合计约 22 MB，若每天追加提交，一年就是 ~8 GB 并被 GitHub 限制。所以 `data` 分支每天被强制重置为单个提交，仓库体积稳定在 ~22 MB。历史版本不保留 —— 需要留存的话，把 workflow 改成按日期分文件提交，但要接受体积线性增长。
@@ -47,6 +60,13 @@ Actions → `daily-snapshot` → Run workflow。可选参数：每页条数（�
 node scripts/fetch.js --page=2000 --out=data
 # 冒烟测试（只拉一页）
 node scripts/fetch.js --page=200 --max-pages=1 --out=tmpdata
+
+# 归档（需要 GITHUB_TOKEN，repo 作用域）
+GITHUB_TOKEN=... GITHUB_REPOSITORY=hzxs163/radio-browser-snapshot \
+  node scripts/archive.mjs --file=data/stations.csv.gz --dry-run
+
+# 单测
+node scripts/test-archive.mjs
 ```
 
 Node 18+，无任何依赖。
