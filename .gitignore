@@ -1,0 +1,4 @@
+tmpdata/
+build/
+node_modules/
+*.log

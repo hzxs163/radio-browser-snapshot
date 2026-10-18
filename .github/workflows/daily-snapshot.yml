@@ -1,0 +1,114 @@
+name: daily-snapshot
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      page:
+        description: '每页拉取条数（官方上限 5000）'
+        required: false
+        default: '2000'
+      include_jsonl:
+        description: '同时提交 stations.jsonl.gz（原始逐条 JSON，体积更大）'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 拉取 Radio Browser 官方数据
+        run: |
+          set -euo pipefail
+          node scripts/fetch.js --page='${{ inputs.page || '2000' }}' --out=build/data
+
+      - name: 按选项丢弃 jsonl
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_jsonl != true }}
+        run: rm -f build/data/stations.jsonl.gz
+
+      - name: 校验产物
+        run: |
+          set -euo pipefail
+          test -s build/data/stations.csv.gz
+          test -s build/data/meta.json
+          node -e 'const m=JSON.parse(require("fs").readFileSync("build/data/meta.json","utf8"));console.log("rows="+m.rows_written+" csv_bytes="+m.csv_uncompressed_bytes+" sha256="+m.sha256_csv_gz);'
+
+      - name: 强制更新 data 分支（只保留 1 个提交，仓库体积不随天数增长）
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/datawk"
+          git init -q "$RUNNER_TEMP/datawk"
+          cd "$RUNNER_TEMP/datawk"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git symbolic-ref HEAD refs/heads/data
+          cp -r "$GITHUB_WORKSPACE/build/data/." "$PWD/"
+          rows=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("meta.json","utf8")).rows_written)')
+          date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          git add -A
+          git commit -q -m "snapshot $date — $rows stations (Radio Browser official API)"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO}.git" HEAD:data
+          echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: 把摘要写成提交评论（匿名也能在网页上看到结果）
+        if: ${{ always() && env.head_sha }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let meta = {};
+            try { meta = JSON.parse(fs.readFileSync('build/data/meta.json', 'utf8')); } catch (e) {}
+            const body = [
+              '## Radio Browser 快照 ' + (meta.fetched_at || '拉取失败'),
+              '',
+              '| 字段 | 值 |',
+              '| --- | --- |',
+              '| 写入行数 | ' + (meta.rows_written ?? '失败') + ' |',
+              '| 官方 stats 报告 | ' + (meta.stations_in_api_stats ?? '?') + '（含 broken ' + (meta.stations_broken_in_api_stats ?? '?') + '）|',
+              '| 来源 | ' + (meta.source ?? '-') + ' |',
+              '| API 版本 | ' + (meta.api_software_version ?? '-') + ' |',
+              '| stations.csv.gz sha256 | `' + (meta.sha256_csv_gz ?? '-') + '` |',
+              '| CSV 未压缩 | ' + (meta.csv_uncompressed_bytes ?? '-') + ' B |',
+              '',
+              'data 分支提交 `' + (process.env.head_sha || '') + '`',
+            ].join('\n');
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              commit_sha: process.env.head_sha, body,
+            });
+
+      - name: 失败时也留一条评论
+        if: ${{ failure() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let tail = '';
+            try { tail = fs.readFileSync('build/data/meta.json', 'utf8'); } catch (e) {}
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: 'daily-snapshot 运行失败（' + new Date().toISOString() + '）。'
+                  + 'data 分支未改动，仍是上一次快照。请到 Actions 查看具体报错。'
+                  + (tail ? '\n\n```\n' + tail.slice(0, 800) + '\n```' : ''),
+            });
