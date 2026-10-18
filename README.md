@@ -32,7 +32,12 @@ curl -L -o data.tar.gz https://github.com/hzxs163/radio-browser-snapshot/archive
 | `stations.ids.json.gz` | 与上一列**逐行对齐**的 `stationuuid` 数组，用于点击上报和去重，不用为拿 id 再解一遍 7.7 MB 主表 | 1,198,162 B，62022 条 |
 | `meta_web.json` | 前端数据集的行数/剔除数/字典大小/sha256，播放器靠它做可用性探测（`web_rows > 0` 才算这个源能用） | <1 KB |
 
-三件前端产物由 `scripts/build-web.mjs` 从 `stations.csv.gz` 派生（纯函数逻辑在 `scripts/web-data.js`，`node scripts/test-web-data.cjs` 先自检再生成），同一次 CI 里产出，所以行号一定对得上。开了 Pages 后可走 CDN 直读：`https://hzxs163.github.io/radio-browser-snapshot/stations.web.json.gz`。
+三件前端产物由 `scripts/build-web.mjs` 从 `stations.csv.gz` 派生（纯函数逻辑在 `scripts/web-data.js`，`node scripts/test-web-data.cjs` 先自检再生成），同一次 CI 里产出，所以行号一定对得上。`data` 分支根目录已开成 GitHub Pages（legacy 分支构建），所以这些文件也能走 CDN 直读，带 `Access-Control-Allow-Origin: *`，浏览器跨域直接拉：
+
+```bash
+base=https://hzxs163.github.io/radio-browser-snapshot   # 或 https://raw.githubusercontent.com/hzxs163/radio-browser-snapshot/data
+for f in meta_web.json stations.web.json.gz stations.ids.json.gz; do curl -L -O $base/$f; done
+```
 
 注意行数口径：官方 `/json/stats` 的 `stations` 只统计**可用**台（62046），另有 `stations_broken`（7026）；全量行数 = 两者之和 = 69072，脚本按这个数做完整性下限校验（95%）。CSV 里每行都带 `lastcheckok` / `ssl_error` / `bitrate`，可自行过滤掉官方判定已失效的台。
 
