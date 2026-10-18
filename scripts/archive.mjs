@@ -57,7 +57,15 @@ export function isoWeekTag(d = new Date()) {
 
 // 纯函数：给定归档 Release 列表和预算，算出该删哪些（从最老的开始），并保证至少留 1 个
 export function planPrune(releases, budgetBytes) {
-  const sorted = [...releases].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  // 按 tag 名排序：snap-YYYY-Www 定宽补零，字典序即时间序。
+  // 不能用 created_at —— GitHub 对 target_commitish 指向同一提交的 Release 会给出一模一样的 created_at，并列时顺序不可控。
+  const sorted = [...releases].sort((a, b) => {
+    // 用原生 < > 而不是 localeCompare：Actions runner 的 ICU locale 会变，
+    // 而这里必须严格等于码点序才和 tag 的时间序一致
+    const ta = String(a.tag_name), tb = String(b.tag_name);
+    const t = ta < tb ? -1 : ta > tb ? 1 : 0;
+    return t !== 0 ? t : new Date(a.created_at) - new Date(b.created_at);
+  });
   const total = sorted.reduce((s, r) => s + sizeOf(r), 0);
   const toDelete = [];
   let acc = total;

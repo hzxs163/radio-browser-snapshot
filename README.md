@@ -38,6 +38,7 @@ curl -L -o data.tar.gz https://github.com/hzxs163/radio-browser-snapshot/archive
 - 只存 CSV（约 9.35 MB/份），不存 JSONL —— JSONL 的额外字段（`changeuuid`/`languagecodes`/`ssl_error` 等）在每日最新的 `data` 分支里都有。
 - 每次运行先算所有 `snap-*` Release 的资产总体积，超过 `990000000` B 就**从最老的一周开始删**，删到低于预算为止；无论如何至少保留 1 份（哪怕单份就超预算）。
 - 990 MB ÷ 9.35 MB ≈ **105 周 ≈ 两年**跨度。
+- 「最老」按 **tag 名**判定，不看 `created_at`：几个 Release 若 `target_commitish` 指向同一个提交，GitHub 会给出一模一样的 `created_at`，并列时顺序不可控，会删错周。
 - 取最新一份：`https://github.com/hzxs163/radio-browser-snapshot/releases/latest/download/stations.csv.gz`
 
 **为什么放 Release 而不是 git 分支**：git 里删掉旧文件不会让 `.git` 变小，历史中的 blob 仍在，仓库只增不减；要真正回收就得每次重写整条分支再强推，那样每次都要上传全部存档，CI 又慢又易超时。Release 资产存在 git 之外，删 Release 就是真回收空间，也不影响 `git clone` 体积。
