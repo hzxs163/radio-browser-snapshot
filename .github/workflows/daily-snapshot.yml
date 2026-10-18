@@ -84,7 +84,7 @@ jobs:
               '| 字段 | 值 |',
               '| --- | --- |',
               '| 写入行数 | ' + (meta.rows_written ?? '失败') + ' |',
-              '| 官方 stats 报告 | ' + (meta.stations_in_api_stats ?? '?') + '（含 broken ' + (meta.stations_broken_in_api_stats ?? '?') + '）|',
+              '| 官方 stats | 可用 ' + (meta.stations_in_api_stats ?? '?') + ' + 失效 ' + (meta.stations_broken_in_api_stats ?? '?') + ' = 推算全量 ' + ((meta.stations_in_api_stats ?? 0) + (meta.stations_broken_in_api_stats ?? 0)) + ' |',
               '| 来源 | ' + (meta.source ?? '-') + ' |',
               '| API 版本 | ' + (meta.api_software_version ?? '-') + ' |',
               '| stations.csv.gz sha256 | `' + (meta.sha256_csv_gz ?? '-') + '` |',

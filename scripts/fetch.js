@@ -121,9 +121,10 @@ const esc = (v) => {
   }
 
   if (!rows.length) throw new Error('拉到 0 条，拒绝写出');
-  const expected = stats.stations;
-  if (rows.length < expected * 0.8 && Number.isFinite(MAX_PAGES) === false) {
-    throw new Error(`数据量异常：得到 ${rows.length} 条，官方 stats 报 ${expected} 条，疑似分页中断`);
+  // 官方 /json/stats 的 stations 只计可用台，全量行数应为 stations + stations_broken
+  const expected = stats.stations + stats.stations_broken;
+  if (!Number.isFinite(MAX_PAGES) && rows.length < expected * 0.95) {
+    throw new Error(`数据量异常：得到 ${rows.length} 条，官方 stats 推算应有 ${expected} 条，疑似分页中断`);
   }
 
   const csv = [FIELDS.join(',')].concat(
