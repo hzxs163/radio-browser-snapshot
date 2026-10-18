@@ -28,6 +28,11 @@ curl -L -o data.tar.gz https://github.com/hzxs163/radio-browser-snapshot/archive
 | `stations.csv.gz` | 30 列表格，含 `stationuuid` / `name` / `url` / `url_resolved` / `country` / `countrycode` / `state` / `language` / `tags` / `codec` / `bitrate` / `votes` / `clickcount` / `lastcheckok` / `lastchecktime_iso8601` / `geo_lat` / `geo_long` 等 | 9,351,948 B（未压缩 31,609,728 B） |
 | `stations.jsonl.gz` | 官方接口原样逐条 JSON，不丢字段 | 12,370,733 B |
 | `meta.json` | 本次拉取时间、来源服务器、行数、官方 stats 报的可用/失效数、两个产物的 sha256、列清单 | <2 KB |
+| `stations.web.json.gz` | 给浏览器直接读的前端数据集：12 列 + 5 张字典（`cc`/`country`/`lang`/`codec`/`tags` 存下标），首行表头 JSON、其后每行一条 NDJSON；只保留 `lastcheckok=1` 的台 | 2,145,514 B（未压缩 7,761,034 B），62022 行 |
+| `stations.ids.json.gz` | 与上一列**逐行对齐**的 `stationuuid` 数组，用于点击上报和去重，不用为拿 id 再解一遍 7.7 MB 主表 | 1,198,162 B，62022 条 |
+| `meta_web.json` | 前端数据集的行数/剔除数/字典大小/sha256，播放器靠它做可用性探测（`web_rows > 0` 才算这个源能用） | <1 KB |
+
+三件前端产物由 `scripts/build-web.mjs` 从 `stations.csv.gz` 派生（纯函数逻辑在 `scripts/web-data.js`，`node scripts/test-web-data.cjs` 先自检再生成），同一次 CI 里产出，所以行号一定对得上。开了 Pages 后可走 CDN 直读：`https://hzxs163.github.io/radio-browser-snapshot/stations.web.json.gz`。
 
 注意行数口径：官方 `/json/stats` 的 `stations` 只统计**可用**台（62046），另有 `stations_broken`（7026）；全量行数 = 两者之和 = 69072，脚本按这个数做完整性下限校验（95%）。CSV 里每行都带 `lastcheckok` / `ssl_error` / `bitrate`，可自行过滤掉官方判定已失效的台。
 
@@ -47,7 +52,7 @@ curl -L -o data.tar.gz https://github.com/hzxs163/radio-browser-snapshot/archive
 
 ## 为什么 `data` 分支只有一个提交
 
-电台的 `clickcount`、`lastchecktime` 每天都在变，全量快照不可能做增量 diff。每天两个产物合计约 22 MB，若每天追加提交，一年就是 ~8 GB 并被 GitHub 限制。所以 `data` 分支每天被强制重置为单个提交，仓库体积稳定在 ~22 MB。`data` 分支本身不留历史，周级别的历史留存走上面的 Release 存档。
+电台的 `clickcount`、`lastchecktime` 每天都在变，全量快照不可能做增量 diff。每天产物合计约 25 MB（CSV + JSONL 约 22 MB，前端数据集三件约 3.3 MB），若每天追加提交，一年就是 ~9 GB 并被 GitHub 限制。所以 `data` 分支每天被强制重置为单个提交，仓库体积稳定在 ~25 MB。`data` 分支本身不留历史，周级别的历史留存走上面的 Release 存档。
 
 ## 手动触发
 

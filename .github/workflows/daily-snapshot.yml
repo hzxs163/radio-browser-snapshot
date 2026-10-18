@@ -46,12 +46,31 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_jsonl != true }}
         run: rm -f build/data/stations.jsonl.gz
 
+      - name: 生成前端数据集（播放器直接读这三件产物）
+        run: |
+          set -euo pipefail
+          node scripts/test-web-data.cjs
+          node scripts/build-web.mjs --in=build/data/stations.csv.gz --out=build/data/stations.web.json.gz
+
       - name: 校验产物
         run: |
           set -euo pipefail
           test -s build/data/stations.csv.gz
+          test -s build/data/stations.web.json.gz
+          test -s build/data/stations.ids.json.gz
           test -s build/data/meta.json
-          node -e 'const m=JSON.parse(require("fs").readFileSync("build/data/meta.json","utf8"));console.log("rows="+m.rows_written+" csv_bytes="+m.csv_uncompressed_bytes+" sha256="+m.sha256_csv_gz);'
+          test -s build/data/meta_web.json
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("build/data/meta.json", "utf8"));
+            const w = JSON.parse(fs.readFileSync("build/data/meta_web.json", "utf8"));
+            // 前端数据集只收可播的台，量级骤降说明上游字段变了或分页断了
+            if (w.web_rows < 40000) throw new Error("web_rows 异常低: " + w.web_rows);
+            if (w.web_rows > m.rows_lastcheckok_1) throw new Error("web_rows 超过 lastcheckok=1 行数");
+            if (w.web_rows + w.dropped_not_playable !== w.csv_rows) throw new Error("行数不守恒");
+            console.log("rows=" + m.rows_written + " web_rows=" + w.web_rows
+              + " web_gz=" + w.gz_bytes + " sha256=" + w.sha256_gz);
+          '
 
       - name: 强制更新 data 分支（只保留 1 个提交，仓库体积不随天数增长）
         run: |
@@ -77,7 +96,9 @@ jobs:
           script: |
             const fs = require('fs');
             let meta = {};
+            let web = {};
             try { meta = JSON.parse(fs.readFileSync('build/data/meta.json', 'utf8')); } catch (e) {}
+            try { web = JSON.parse(fs.readFileSync('build/data/meta_web.json', 'utf8')); } catch (e) {}
             const body = [
               '## Radio Browser 快照 ' + (meta.fetched_at || '拉取失败'),
               '',
@@ -86,6 +107,8 @@ jobs:
               '| 写入行数 | ' + (meta.rows_written ?? '失败') + ' |',
               '| 官方 stats | 可用 ' + (meta.stats_stations_ok ?? '?') + ' + 失效 ' + (meta.stats_stations_broken ?? '?') + ' = 推算全量 ' + (meta.expected_total_rows ?? '?') + ' |',
               '| 实际 lastcheckok 分布 | =1: ' + (meta.rows_lastcheckok_1 ?? '?') + ' / ≠1: ' + (meta.rows_lastcheckok_0 ?? '?') + ' |',
+              '| 前端数据集 | 可播 ' + (web.web_rows ?? '-') + ' 条（剔除 ' + (web.dropped_not_playable ?? '-') + '）· ' + (web.gz_bytes ?? '-') + ' B gz / ' + (web.uncompressed_bytes ?? '-') + ' B 未压缩 · sha256 `' + (web.sha256_gz ?? '-') + '` |',
+              '| 电台 id 表 | ' + (web.ids_rows ?? '-') + ' 条 · ' + (web.ids_gz_bytes ?? '-') + ' B gz · sha256 `' + (web.ids_sha256_gz ?? '-') + '` |',
               '| 来源 | ' + (meta.source ?? '-') + ' |',
               '| API 版本 | ' + (meta.api_software_version ?? '-') + ' |',
               '| stations.csv.gz sha256 | `' + (meta.sha256_csv_gz ?? '-') + '` |',
