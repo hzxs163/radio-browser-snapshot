@@ -82,3 +82,22 @@ node scripts/test-archive.mjs
 ```
 
 Node 18+，无任何依赖。
+
+## 安卓 App：电台APP
+
+`android/` 是一个零第三方依赖的原生 Java 工程（只用框架 API，没有 AndroidX / Compose / ExoPlayer），
+数据直接吃本仓库 `data` 分支的 `stations.web.json.gz`。
+
+- **内置源**：构建时把最新快照打进 `assets/`（约 2.1 MB），装完断网也能列出电台；CI 每次构建会先尝试拉线上最新的一份覆盖，失败就沿用仓库里已提交的那份（流程里有 sha256 校验）。
+- **默认中文**：按 `cc ∈ {CN,TW,HK,MO}` 或语言含 chinese/mandarin/cantonese 判定，实测 2,585 台。
+- **后台无感更新**：开屏先比 `meta_web.json` 的 `sha256_gz`（837 B），变了才下整包，校验 sha256 后解析成二进制缓存原子替换；成功 6 小时内不重复检查，另有 24 小时周期的 JobScheduler 兜底。
+- **启动优先用更新过的那份**：`filesDir/stations.cache.v1` 存在就只读它，不再碰 asset。
+- **播放**：`MediaPlayer` + 前台服务 + `MediaSession`，通知栏/锁屏可暂停停止，支持明文 http 的 Icecast 源。
+
+构建与发版：推 `app-v*` 标签触发 `.github/workflows/android-app.yml`，产物是签好名的 `电台APP v<版本>.apk`，
+Release 标题同版本号。签名密钥在 `android/keystore/diantai.p12`（PKCS12，只用于本 app，换掉会导致老用户无法覆盖安装）。
+
+```bash
+# 本地构建（需要 JDK 17 + Android SDK + Gradle 8.11）
+gradle -p android assembleRelease -Pdiantai.version=0.1
+```

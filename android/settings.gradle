@@ -1,0 +1,21 @@
+// 与仓库里其他部分保持一致：不放 gradle wrapper jar，CI 用 gradle/actions 提供 8.11.1。
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+// aapt2 / zipflinger 这类构建工具是 AGP 声明的外部构件，走项目级仓库，
+// 只写 pluginManagement 会在 mergeReleaseResources 阶段报 "no repositories are defined"。
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'diantai'
+include ':app'
