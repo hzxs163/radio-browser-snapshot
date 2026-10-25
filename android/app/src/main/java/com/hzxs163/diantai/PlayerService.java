@@ -62,7 +62,11 @@ public class PlayerService extends Service {
     private MediaSession session;
     private AudioManager audio;
     private WifiManager.WifiLock wifiLock;
-    private Object focusRequest; // API 26+ 用 AudioFocusRequest，低版本走旧接口
+    // 音频焦点只申请一份并且复用：每次 play 都新建 request 会让新请求顶掉旧请求，
+    // 系统随即给旧监听发 AUDIOFOCUS_LOSS，我们的 pause() 就会把刚起的新台放掉（切台必哑）。
+    private AudioFocusRequest focusRequest;
+    private final AudioManager.OnAudioFocusChangeListener focusListener = this::onFocus;
+    private boolean hasFocus = false;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Runnable prepareTimeout;
     private volatile String nowTitle = "";
@@ -138,6 +142,8 @@ public class PlayerService extends Service {
             return;
         }
         releasePlayer();
+        nowTitle = "";
+        lastTitle = "";
         setState(S_CONNECTING, null);
         startForegroundCompat(buildNotification());
         acquireLocks();
@@ -154,8 +160,12 @@ public class PlayerService extends Service {
             player.setOnPreparedListener(mp -> {
                 if (mp != player) return;
                 cancelPrepareTimeout();
-                mp.start();
-                setState(S_PLAYING, null);
+                try {
+                    mp.start();
+                    setState(S_PLAYING, null);
+                } catch (Exception e) {
+                    setState(S_ERROR, "起播失败：" + e.getMessage());
+                }
             });
             // 直播流正常不会结束；真结束了按停止处理，别让底栏一直停在「正在播放」
             player.setOnCompletionListener(mp -> {
@@ -439,33 +449,41 @@ public class PlayerService extends Service {
 
     private boolean requestFocus() {
         if (audio == null) return true;
+        if (hasFocus) return true; // 已经握在手里就别再申请，重复申请反而会把焦点打断
+        int result;
         if (Build.VERSION.SDK_INT >= 26) {
-            AudioFocusRequest req = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                    .setWillPauseWhenDucked(false)
-                    .setOnAudioFocusChangeListener(this::onFocus)
-                    .build();
-            focusRequest = req;
-            return audio.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            if (focusRequest == null) {
+                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                        .setWillPauseWhenDucked(false)
+                        .setOnAudioFocusChangeListener(focusListener)
+                        .build();
+            }
+            result = audio.requestAudioFocus(focusRequest);
+        } else {
+            result = audio.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN);
         }
-        return audio.requestAudioFocus(this::onFocus, AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return hasFocus;
     }
 
     private void abandonFocus() {
         if (audio == null) return;
-        if (Build.VERSION.SDK_INT >= 26 && focusRequest instanceof AudioFocusRequest) {
-            audio.abandonAudioFocusRequest((AudioFocusRequest) focusRequest);
+        if (!hasFocus) return;
+        if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+            audio.abandonAudioFocusRequest(focusRequest);
         } else {
-            audio.abandonAudioFocus(this::onFocus);
+            audio.abandonAudioFocus(focusListener);
         }
-        focusRequest = null;
+        hasFocus = false;
     }
 
     private void onFocus(int change) {
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            hasFocus = false; // 焦点被系统收走了，下次播放要重新申请
             pause();
         }
     }
