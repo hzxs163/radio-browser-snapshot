@@ -14,11 +14,17 @@ import android.media.MediaMetadata;
 import android.media.MediaPlayer;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /** 前台播放服务：MediaPlayer + 通知栏/锁屏控制，切后台继续出声。 */
 public class PlayerService extends Service {
@@ -43,12 +49,19 @@ public class PlayerService extends Service {
 
     private static final String CHANNEL = "playback";
     private static final int NOTIF_ID = 1001;
+    private static final int PREPARE_TIMEOUT_MS = 20000;
+    /** 不少国内 CDN 会拒绝 MediaPlayer 默认的 stagefright UA，带上浏览器的 UA 更稳。 */
+    private static final String STREAM_UA =
+            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/120.0.0.0 Mobile Safari/537.36";
 
     private MediaPlayer player;
     private MediaSession session;
     private AudioManager audio;
     private WifiManager.WifiLock wifiLock;
     private Object focusRequest; // API 26+ 用 AudioFocusRequest，低版本走旧接口
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private Runnable prepareTimeout;
 
     private String currentUrl = "";
     private String currentName = "";
@@ -127,15 +140,20 @@ public class PlayerService extends Service {
             player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
             player.setOnPreparedListener(mp -> {
                 if (mp != player) return;
+                cancelPrepareTimeout();
                 mp.start();
                 setState(S_PLAYING, null);
             });
+            // 直播流正常不会结束；真结束了按停止处理，别让底栏一直停在「正在播放」
             player.setOnCompletionListener(mp -> {
-                if (mp == player) setState(S_STOPPED, null);
+                if (mp == player) ui.post(this::stopPlayback);
             });
             player.setOnErrorListener((mp, what, extra) -> {
                 Log.w("diantai", "media error " + what + "/" + extra + " " + currentUrl);
-                if (mp == player) setState(S_ERROR, "这条线路放不出来，换一个台试试");
+                if (mp == player) {
+                    cancelPrepareTimeout();
+                    setState(S_ERROR, "这条线路放不出来（" + what + "/" + extra + "），换一个台试试");
+                }
                 return true;
             });
             player.setOnInfoListener((mp, what, extra) -> {
@@ -143,11 +161,34 @@ public class PlayerService extends Service {
                 else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END && mp.isPlaying()) setState(S_PLAYING, null);
                 return false;
             });
-            player.setDataSource(url);
+            Map<String, String> headers = new HashMap<>();
+            headers.put("User-Agent", STREAM_UA);
+            headers.put("Accept", "*/*");
+            player.setDataSource(this, Uri.parse(url), headers);
             player.prepareAsync();
+            armPrepareTimeout();
         } catch (Exception e) {
             Log.w("diantai", "play failed", e);
             setState(S_ERROR, "打不开这个台：" + e.getMessage());
+        }
+    }
+
+    private void armPrepareTimeout() {
+        cancelPrepareTimeout();
+        prepareTimeout = () -> {
+            if (S_CONNECTING.equals(state)) {
+                // 卡在连接阶段：主动放掉，把失败原因说出来，而不是让底栏一直转
+                releasePlayer();
+                setState(S_ERROR, "连接超时（20 秒没出声），换一个台试试");
+            }
+        };
+        ui.postDelayed(prepareTimeout, PREPARE_TIMEOUT_MS);
+    }
+
+    private void cancelPrepareTimeout() {
+        if (prepareTimeout != null) {
+            ui.removeCallbacks(prepareTimeout);
+            prepareTimeout = null;
         }
     }
 
@@ -390,6 +431,8 @@ public class PlayerService extends Service {
 
     @Override
     public void onDestroy() {
+        cancelPrepareTimeout();
+        ui.removeCallbacksAndMessages(null);
         releasePlayer();
         releaseLocks();
         abandonFocus();
