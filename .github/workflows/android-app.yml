@@ -96,14 +96,23 @@ jobs:
           cp "$src" "$out"
           test -s "$out"
           ls -l "$out"
-          # pipefail 下不能把 unzip 接给 grep -q（grep 提前退出会让 unzip 吃 SIGPIPE），先落文件
-          unzip -l "$out" > apk-list.txt
-          grep -q 'assets/stations.web.json.gz' apk-list.txt
-          grep -q 'assets/stations.meta.json' apk-list.txt
-          grep -c 'assets/' apk-list.txt || true
+          # 用 python 读 zip：不受 shell locale / unzip 版本影响，失败时还能把条目打全
+          python3 - "$out" <<'PY'
+          import sys, zipfile
+          p = sys.argv[1]
+          z = zipfile.ZipFile(p)
+          names = z.namelist()
+          print('entries:', len(names))
+          for n in names:
+              if n.startswith('assets/'):
+                  print('  asset:', n, z.getinfo(n).file_size)
+          for want in ('assets/stations.web.json.gz', 'assets/stations.meta.json'):
+              assert want in names, 'APK 里缺少 ' + want
+          print('assets ok')
+          PY
           bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$bt/apksigner" verify --print-certs "$out" > certs.txt
-          head -5 certs.txt
+          cat certs.txt | sed -n '1,5p'
           grep -q 'CN=DiantaI' certs.txt
           echo "size=$(stat -c %s "$out")" >> "$GITHUB_OUTPUT"
           echo "sha256=$(sha256sum "$out" | cut -c1-64)" >> "$GITHUB_OUTPUT"
