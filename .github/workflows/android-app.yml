@@ -92,7 +92,8 @@ jobs:
           set -euo pipefail
           v="${{ steps.ver.outputs.version }}"
           src=android/app/build/outputs/apk/release/app-release.apk
-          out="电台APP v${v}.apk"
+          # 资产名只能是 ASCII：GitHub 会把中文抹掉（实测 电台APP v0.1.apk 变成 APP.v0.1.apk）
+          out="DiantaI-App-v${v}.apk"
           cp "$src" "$out"
           test -s "$out"
           ls -l "$out"
@@ -129,7 +130,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: diantai-${{ steps.ver.outputs.version }}
-          path: 电台APP*.apk
+          path: DiantaI-App-v*.apk
           if-no-files-found: error
 
       - name: 发布 Release
@@ -150,7 +151,7 @@ jobs:
           - 电台目录内置在安装包里，装完断网也能列出电台
           - 后台无感更新：开屏时比对线上快照的 sha256，只有变了才下新版（约 2.1 MB），校验后原子替换，下次开屏就用新的
           - 播放走前台服务，锁屏/切后台继续出声，通知栏和锁屏都能暂停、停止
-          - 收藏存在本地，长按列表右侧的星星即可
+          - 收藏存在本地，点列表右侧的星星即可
 
           安装：下载下面的 apk，打开并允许「安装未知来源应用」。以后覆盖安装即可（同一把签名钥匙，收藏和本机快照都留着）。
 
@@ -158,7 +159,11 @@ jobs:
           SHA-256：$sha
           EOF
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$asset" --clobber
+            # 先清掉旧资产，避免改过命名后新旧两份并存
+            for n in $(gh release view "$tag" --json assets -q '.assets[].name'); do
+              gh release delete-asset "$tag" "$n" --yes || true
+            done
+            gh release upload "$tag" "$asset"
             gh release edit "$tag" --title "电台APP v${v}" --notes-file notes.md
           else
             gh release create "$tag" "$asset" --title "电台APP v${v}" --notes-file notes.md
