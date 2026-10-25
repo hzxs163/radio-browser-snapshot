@@ -77,7 +77,7 @@ class StationAdapter extends BaseAdapter {
         h.meta.setText(s.meta());
         h.star.setImageResource(favs.contains(s.url) ? R.drawable.ic_star_on : R.drawable.ic_star_off);
         final Station row = s;
-        h.star.setOnClickListener(v -> {
+        h.star.setOnClickListener(btn -> {
             if (starClick != null) starClick.onStar(row);
         });
         return v;

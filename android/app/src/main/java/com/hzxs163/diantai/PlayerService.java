@@ -217,7 +217,7 @@ public class PlayerService extends Service {
         lastName = currentName;
         lastSub = currentSub;
         if (session != null) {
-            long pb = PlaybackState.STATE_NONE;
+            int pb = PlaybackState.STATE_NONE;
             if (S_PLAYING.equals(s)) pb = PlaybackState.STATE_PLAYING;
             else if (S_PAUSED.equals(s)) pb = PlaybackState.STATE_PAUSED;
             else if (S_CONNECTING.equals(s)) pb = PlaybackState.STATE_BUFFERING;
