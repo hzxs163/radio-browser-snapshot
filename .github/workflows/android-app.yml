@@ -95,11 +95,16 @@ jobs:
           out="电台APP v${v}.apk"
           cp "$src" "$out"
           test -s "$out"
-          # 内置源必须真的在包里
-          unzip -l "$out" | grep -q 'assets/stations.web.json.gz'
-          unzip -l "$out" | grep -q 'assets/stations.meta.json'
+          ls -l "$out"
+          # pipefail 下不能把 unzip 接给 grep -q（grep 提前退出会让 unzip 吃 SIGPIPE），先落文件
+          unzip -l "$out" > apk-list.txt
+          grep -q 'assets/stations.web.json.gz' apk-list.txt
+          grep -q 'assets/stations.meta.json' apk-list.txt
+          grep -c 'assets/' apk-list.txt || true
           bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$bt/apksigner" verify --print-certs "$out" | head -5
+          "$bt/apksigner" verify --print-certs "$out" > certs.txt
+          head -5 certs.txt
+          grep -q 'CN=DiantaI' certs.txt
           echo "size=$(stat -c %s "$out")" >> "$GITHUB_OUTPUT"
           echo "sha256=$(sha256sum "$out" | cut -c1-64)" >> "$GITHUB_OUTPUT"
           echo "asset=$out" >> "$GITHUB_OUTPUT"
