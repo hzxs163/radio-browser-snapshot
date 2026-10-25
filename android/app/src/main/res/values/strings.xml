@@ -5,6 +5,7 @@
     <string name="search_hint">搜台名、国家或流派</string>
     <string name="tab_chinese">中文</string>
     <string name="tab_all">全部</string>
+    <string name="tab_recent">最近</string>
     <string name="tab_fav">收藏</string>
     <string name="loading">正在准备电台列表…</string>
     <string name="empty_search">没有匹配的电台</string>

@@ -92,7 +92,11 @@ Node 18+，无任何依赖。
 - **默认中文**：按 `cc ∈ {CN,TW,HK,MO}` 或语言含 chinese/mandarin/cantonese 判定，实测 2,583 台（其中 2,581 台有名字，895 台仍是明文 http）。
 - **后台无感更新**：开屏先比 `meta_web.json` 的 `sha256_gz`（837 B），变了才下整包，校验 sha256 后解析成二进制缓存原子替换；成功 6 小时内不重复检查，另有 24 小时周期的 JobScheduler 兜底。
 - **启动优先用更新过的那份**：`filesDir/stations.cache.v1` 存在就只读它，不再碰 asset。
-- **播放**：`MediaPlayer` + 前台服务 + `MediaSession`，通知栏/锁屏可暂停停止，支持明文 http 的 Icecast 源。
+- **播放**：`MediaPlayer` + 前台服务 + `MediaSession`，通知栏/锁屏可暂停停止，支持明文 http 的 Icecast 源；列表行、通知栏、详情页三处都能控制。
+- **筛选**：国家 / 流派 / 最低码率三层筛选，叠在当前页签上（搜索框右侧的漏斗）。
+- **最近**：最近播放 30 个台单独一个页签，按最近使用倒序。
+- **详情页**：点底部播放条展开，大播放键、上一台/下一台（按当前列表顺序）、收藏、睡眠定时（15/30/60 分钟）。
+- **正在播放的曲目**：对发 ICY 元数据的台（Icecast/Shoutcast），每隔 40 秒开一条短连接读 `StreamTitle`，显示在底栏、详情页和通知栏；不发元数据的台留空，不影响播放。
 
 构建与发版：推 `app-v*` 标签触发 `.github/workflows/android-app.yml`，产物是签好名的 `电台APP v<版本>.apk`，
 Release 标题同版本号。签名密钥在 `android/keystore/diantai.p12`（PKCS12，只用于本 app，换掉会导致老用户无法覆盖安装）。

@@ -21,6 +21,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.util.HashMap;
@@ -32,6 +33,8 @@ public class PlayerService extends Service {
     static final String ACTION_PLAY = "com.hzxs163.diantai.action.PLAY";
     static final String ACTION_TOGGLE = "com.hzxs163.diantai.action.TOGGLE";
     static final String ACTION_STOP = "com.hzxs163.diantai.action.STOP";
+    static final String ACTION_SLEEP = "com.hzxs163.diantai.action.SLEEP";
+    static final String EXTRA_MINUTES = "minutes";
 
     static final String EXTRA_URL = "url";
     static final String EXTRA_NAME = "name";
@@ -62,6 +65,10 @@ public class PlayerService extends Service {
     private Object focusRequest; // API 26+ 用 AudioFocusRequest，低版本走旧接口
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Runnable prepareTimeout;
+    private volatile String nowTitle = "";
+    private IcyReader icy;
+    private long sleepDeadline = 0;
+    private Runnable sleepStop;
 
     private String currentUrl = "";
     private String currentName = "";
@@ -73,6 +80,8 @@ public class PlayerService extends Service {
     static volatile String lastUrl = "";
     static volatile String lastName = "";
     static volatile String lastSub = "";
+    static volatile String lastTitle = "";
+    static volatile long lastSleepDeadline = 0;
 
     @Override
     public void onCreate() {
@@ -109,6 +118,10 @@ public class PlayerService extends Service {
         }
         if (ACTION_STOP.equals(action)) {
             stopPlayback();
+            return START_NOT_STICKY;
+        }
+        if (ACTION_SLEEP.equals(action)) {
+            setSleep(intent.getIntExtra(EXTRA_MINUTES, 0));
             return START_NOT_STICKY;
         }
         stopSelf();
@@ -152,6 +165,7 @@ public class PlayerService extends Service {
                 Log.w("diantai", "media error " + what + "/" + extra + " " + currentUrl);
                 if (mp == player) {
                     cancelPrepareTimeout();
+                    stopIcy();
                     setState(S_ERROR, "这条线路放不出来（" + what + "/" + extra + "），换一个台试试");
                 }
                 return true;
@@ -167,10 +181,54 @@ public class PlayerService extends Service {
             player.setDataSource(this, Uri.parse(url), headers);
             player.prepareAsync();
             armPrepareTimeout();
+            startIcy(url);
         } catch (Exception e) {
             Log.w("diantai", "play failed", e);
             setState(S_ERROR, "打不开这个台：" + e.getMessage());
         }
+    }
+
+    private void startIcy(String url) {
+        stopIcy();
+        nowTitle = "";
+        icy = new IcyReader(url, title -> {
+            if (title == null || title.isEmpty() || title.equals(nowTitle)) return;
+            nowTitle = title;
+            lastTitle = title;
+            broadcast(null);
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(NOTIF_ID, buildNotification());
+        });
+        icy.start();
+    }
+
+    private void stopIcy() {
+        if (icy != null) {
+            icy.stop();
+            icy = null;
+        }
+    }
+
+    private void setSleep(int minutes) {
+        cancelSleep();
+        if (minutes <= 0) {
+            broadcast(null);
+            return;
+        }
+        sleepDeadline = SystemClock.elapsedRealtime() + minutes * 60000L;
+        lastSleepDeadline = sleepDeadline;
+        sleepStop = this::stopPlayback;
+        ui.postDelayed(sleepStop, minutes * 60000L);
+        broadcast(null);
+    }
+
+    private void cancelSleep() {
+        if (sleepStop != null) {
+            ui.removeCallbacks(sleepStop);
+            sleepStop = null;
+        }
+        sleepDeadline = 0;
+        lastSleepDeadline = 0;
     }
 
     private void armPrepareTimeout() {
@@ -200,6 +258,7 @@ public class PlayerService extends Service {
         if (!requestFocus()) return;
         try {
             player.start();
+            startIcy(currentUrl);
             setState(S_PLAYING, null);
         } catch (Exception e) {
             setState(S_ERROR, "继续播放失败");
@@ -208,6 +267,7 @@ public class PlayerService extends Service {
 
     private void pause() {
         if (player == null) return;
+        stopIcy();
         if (S_CONNECTING.equals(state)) {
             // 还在连：直接丢弃这次连接，重按播放会从头再来
             releasePlayer();
@@ -225,6 +285,8 @@ public class PlayerService extends Service {
     }
 
     private void stopPlayback() {
+        stopIcy();
+        cancelSleep();
         releasePlayer();
         currentUrl = "";
         setState(S_STOPPED, null);
@@ -257,6 +319,7 @@ public class PlayerService extends Service {
         lastUrl = currentUrl;
         lastName = currentName;
         lastSub = currentSub;
+        lastTitle = nowTitle;
         if (session != null) {
             int pb = PlaybackState.STATE_NONE;
             if (S_PLAYING.equals(s)) pb = PlaybackState.STATE_PLAYING;
@@ -291,6 +354,7 @@ public class PlayerService extends Service {
         i.putExtra("url", currentUrl);
         i.putExtra("name", currentName);
         i.putExtra("sub", currentSub);
+        i.putExtra("title", nowTitle);
         if (error != null) i.putExtra(EXTRA_ERROR, error);
         sendBroadcast(i);
     }
@@ -324,7 +388,8 @@ public class PlayerService extends Service {
                 serviceIntent(ACTION_STOP, 2)).build();
 
         String title = currentName.isEmpty() ? "电台" : currentName;
-        String text = currentSub.isEmpty() ? stateText() : currentSub + " · " + stateText();
+        String detail = nowTitle.isEmpty() ? currentSub : nowTitle;
+        String text = detail.isEmpty() ? stateText() : detail + " · " + stateText();
 
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL)
@@ -431,6 +496,8 @@ public class PlayerService extends Service {
 
     @Override
     public void onDestroy() {
+        stopIcy();
+        cancelSleep();
         cancelPrepareTimeout();
         ui.removeCallbacksAndMessages(null);
         releasePlayer();
