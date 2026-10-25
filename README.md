@@ -86,7 +86,7 @@ Node 18+，无任何依赖。
 ## 安卓 App：电台APP
 
 `android/` 是一个零第三方依赖的原生 Java 工程（只用框架 API，没有 AndroidX / Compose / ExoPlayer），
-数据直接吃本仓库 `data` 分支的 `stations.web.json.gz`。
+数据直接吃本仓库 `data` 分支的 `stations.web.json.gz`（打包时存成 `assets/stations.web.dat`：aapt2 会把 `.gz` 资产自动解压并去掉后缀）。
 
 - **内置源**：构建时把最新快照打进 `assets/`（约 2.1 MB），装完断网也能列出电台；CI 每次构建会先尝试拉线上最新的一份覆盖，失败就沿用仓库里已提交的那份（流程里有 sha256 校验）。
 - **默认中文**：按 `cc ∈ {CN,TW,HK,MO}` 或语言含 chinese/mandarin/cantonese 判定，实测 2,585 台。

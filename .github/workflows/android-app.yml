@@ -52,20 +52,20 @@ jobs:
           base=https://hzxs163.github.io/radio-browser-snapshot
           dst=android/app/src/main/assets
           if curl -fsSL --max-time 90 -o "$dst/stations.meta.json.tmp" "$base/meta_web.json" \
-             && curl -fsSL --max-time 180 -o "$dst/stations.web.json.gz.tmp" "$base/stations.web.json.gz"; then
+             && curl -fsSL --max-time 180 -o "$dst/stations.web.dat.tmp" "$base/stations.web.json.gz"; then
             mv "$dst/stations.meta.json.tmp" "$dst/stations.meta.json"
-            mv "$dst/stations.web.json.gz.tmp" "$dst/stations.web.json.gz"
+            mv "$dst/stations.web.dat.tmp" "$dst/stations.web.dat"
             echo "已更新为线上最新快照"
           else
             rm -f "$dst"/*.tmp
             echo "拉取失败，沿用仓库内置的那份快照"
           fi
           ls -l "$dst"
-          sha256sum "$dst/stations.web.json.gz"
+          sha256sum "$dst/stations.web.dat"
           python3 - <<'PY'
           import json, hashlib
           meta = json.load(open('android/app/src/main/assets/stations.meta.json'))
-          raw = open('android/app/src/main/assets/stations.web.json.gz','rb').read()
+          raw = open('android/app/src/main/assets/stations.web.dat','rb').read()
           got = hashlib.sha256(raw).hexdigest()
           print('meta sha256_gz =', meta.get('sha256_gz'))
           print('asset sha256    =', got)
@@ -106,7 +106,7 @@ jobs:
           for n in names:
               if n.startswith('assets/'):
                   print('  asset:', n, z.getinfo(n).file_size)
-          for want in ('assets/stations.web.json.gz', 'assets/stations.meta.json'):
+          for want in ('assets/stations.web.dat', 'assets/stations.meta.json'):
               assert want in names, 'APK 里缺少 ' + want
           print('assets ok')
           PY

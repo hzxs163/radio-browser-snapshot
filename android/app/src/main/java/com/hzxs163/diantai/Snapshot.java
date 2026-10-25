@@ -31,7 +31,8 @@ import java.util.zip.GZIPInputStream;
 public final class Snapshot {
 
     static final String BASE = "https://hzxs163.github.io/radio-browser-snapshot/";
-    static final String ASSET_GZ = "stations.web.json.gz";
+    /** 包里不叫 .gz：aapt2 会把 .gz 资产自动解压并去掉后缀，装进 APK 的就成了 7.8 MB 明文。 */
+    static final String ASSET_DATA = "stations.web.dat";
     static final String ASSET_META = "stations.meta.json";
     static final String CACHE = "stations.cache.v1";
     static final String META = "snapshot.meta";
@@ -99,7 +100,7 @@ public final class Snapshot {
         }
         Meta bundled = readBundledMeta(ctx);
         List<Station> list;
-        try (InputStream in = ctx.getAssets().open(ASSET_GZ)) {
+        try (InputStream in = ctx.getAssets().open(ASSET_DATA)) {
             list = parse(in);
         }
         sort(list);
@@ -160,10 +161,18 @@ public final class Snapshot {
 
     // ---------- 解析 ----------
 
+    /** 按魔数判断是不是 gzip：包内 asset 可能被 aapt2 解开过，网络下载的那份则是原始 gz。 */
     static List<Station> parse(InputStream raw) throws Exception {
         List<Station> out = new ArrayList<>(70000);
+        BufferedInputStream bin = raw instanceof BufferedInputStream
+                ? (BufferedInputStream) raw : new BufferedInputStream(raw, 1 << 16);
+        bin.mark(2);
+        int b1 = bin.read();
+        int b2 = bin.read();
+        bin.reset();
+        InputStream body = (b1 == 0x1f && b2 == 0x8b) ? new GZIPInputStream(bin) : bin;
         try (BufferedReader r = new BufferedReader(
-                new InputStreamReader(new GZIPInputStream(new BufferedInputStream(raw)), StandardCharsets.UTF_8), 1 << 16)) {
+                new InputStreamReader(body, StandardCharsets.UTF_8), 1 << 16)) {
             String header = r.readLine();
             if (header == null) return out;
             JSONObject h = new JSONObject(header);
