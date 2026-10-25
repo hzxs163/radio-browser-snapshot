@@ -114,6 +114,14 @@ jobs:
           "$bt/apksigner" verify --print-certs "$out" > certs.txt
           cat certs.txt | sed -n '1,5p'
           grep -q 'CN=DiantaI' certs.txt
+          # 版本号以 AGP 写出的元数据为准，别只信文件名
+          python3 - <<PY
+          import json
+          m = json.load(open('android/app/build/outputs/apk/release/output-metadata.json'))
+          el = m['elements'][0]
+          print('versionCode', el['versionCode'], 'versionName', el['versionName'])
+          assert el['versionName'] == '${{ steps.ver.outputs.version }}', '版本号与标签不一致'
+          PY
           echo "size=$(stat -c %s "$out")" >> "$GITHUB_OUTPUT"
           echo "sha256=$(sha256sum "$out" | cut -c1-64)" >> "$GITHUB_OUTPUT"
           echo "asset=$out" >> "$GITHUB_OUTPUT"
