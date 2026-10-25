@@ -89,7 +89,7 @@ Node 18+，无任何依赖。
 数据直接吃本仓库 `data` 分支的 `stations.web.json.gz`（打包时存成 `assets/stations.web.dat`：aapt2 会把 `.gz` 资产自动解压并去掉后缀）。
 
 - **内置源**：构建时把最新快照打进 `assets/`（约 2.1 MB），装完断网也能列出电台；CI 每次构建会先尝试拉线上最新的一份覆盖，失败就沿用仓库里已提交的那份（流程里有 sha256 校验）。
-- **默认中文**：按 `cc ∈ {CN,TW,HK,MO}` 或语言含 chinese/mandarin/cantonese 判定，实测 2,585 台。
+- **默认中文**：按 `cc ∈ {CN,TW,HK,MO}` 或语言含 chinese/mandarin/cantonese 判定，实测 2,583 台（其中 2,581 台有名字，895 台仍是明文 http）。
 - **后台无感更新**：开屏先比 `meta_web.json` 的 `sha256_gz`（837 B），变了才下整包，校验 sha256 后解析成二进制缓存原子替换；成功 6 小时内不重复检查，另有 24 小时周期的 JobScheduler 兜底。
 - **启动优先用更新过的那份**：`filesDir/stations.cache.v1` 存在就只读它，不再碰 asset。
 - **播放**：`MediaPlayer` + 前台服务 + `MediaSession`，通知栏/锁屏可暂停停止，支持明文 http 的 Icecast 源。
