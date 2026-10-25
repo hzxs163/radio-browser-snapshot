@@ -3,8 +3,3 @@ tmpfull/
 build/
 node_modules/
 *.log
-android/.gradle/
-android/local.properties
-android/app/build/
-*.iml
-.idea/
