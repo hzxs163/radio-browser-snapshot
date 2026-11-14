@@ -1,0 +1,38 @@
+{
+  "schema": 2,
+  "generated_at": "2026-11-14T11:16:47.451Z",
+  "from": "stations.csv.gz",
+  "csv_rows": 52652,
+  "csv_columns": 30,
+  "web_fields": [
+    "name",
+    "url_resolved",
+    "cc",
+    "country",
+    "lang",
+    "tags",
+    "votes",
+    "bitrate",
+    "codec",
+    "hls",
+    "lat",
+    "lon"
+  ],
+  "web_rows": 52634,
+  "dropped_not_playable": 18,
+  "dict_sizes": {
+    "cc": 225,
+    "country": 223,
+    "lang": 1201,
+    "codec": 11,
+    "tags": 11164
+  },
+  "uncompressed_bytes": 6344728,
+  "gz_bytes": 1925088,
+  "sha256_gz": "2ac85a8f2e54434458d0a80571de6611e5b0ce80b3e91bbd668b10f206e5619d",
+  "ids_rows": 52634,
+  "ids_gz_bytes": 1011469,
+  "ids_sha256_gz": "0fb79a46b5ea628eaf6fab8f1349671981233ed9b25c34bfb7f9537336c4e93d",
+  "snapshot_fetched_at": "2026-11-14T11:16:45.309Z",
+  "snapshot_rows_written": 52652
+}
